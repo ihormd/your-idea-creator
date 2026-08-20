@@ -11,6 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as ReceiptsRouteImport } from './routes/receipts'
+import { Route as ScanRouteImport } from './routes/scan'
+import { Route as ReceiptsIdRouteImport } from './routes/receipts.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,31 +26,74 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReceiptsRoute = ReceiptsRouteImport.update({
+  id: '/receipts',
+  path: '/receipts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScanRoute = ScanRouteImport.update({
+  id: '/scan',
+  path: '/scan',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReceiptsIdRoute = ReceiptsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ReceiptsRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/onboarding': typeof OnboardingRoute
+  '/receipts': typeof ReceiptsRouteWithChildren
+  '/scan': typeof ScanRoute
+  '/receipts/$id': typeof ReceiptsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/onboarding': typeof OnboardingRoute
+  '/receipts': typeof ReceiptsRouteWithChildren
+  '/scan': typeof ScanRoute
+  '/receipts/$id': typeof ReceiptsIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/onboarding': typeof OnboardingRoute
+  '/receipts': typeof ReceiptsRouteWithChildren
+  '/scan': typeof ScanRoute
+  '/receipts/$id': typeof ReceiptsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth'
+  fullPaths:
+    '/' | '/auth' | '/onboarding' | '/receipts' | '/scan' | '/receipts/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth'
-  id: '__root__' | '/' | '/auth'
+  to: '/' | '/auth' | '/onboarding' | '/receipts' | '/scan' | '/receipts/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/auth'
+    | '/onboarding'
+    | '/receipts'
+    | '/scan'
+    | '/receipts/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
+  OnboardingRoute: typeof OnboardingRoute
+  ReceiptsRoute: typeof ReceiptsRouteWithChildren
+  ScanRoute: typeof ScanRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +112,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/receipts': {
+      id: '/receipts'
+      path: '/receipts'
+      fullPath: '/receipts'
+      preLoaderRoute: typeof ReceiptsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scan': {
+      id: '/scan'
+      path: '/scan'
+      fullPath: '/scan'
+      preLoaderRoute: typeof ScanRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/receipts/$id': {
+      id: '/receipts/$id'
+      path: '/$id'
+      fullPath: '/receipts/$id'
+      preLoaderRoute: typeof ReceiptsIdRouteImport
+      parentRoute: typeof ReceiptsRoute
+    }
   }
 }
+
+interface ReceiptsRouteChildren {
+  ReceiptsIdRoute: typeof ReceiptsIdRoute
+}
+
+const ReceiptsRouteChildren: ReceiptsRouteChildren = {
+  ReceiptsIdRoute: ReceiptsIdRoute,
+}
+
+const ReceiptsRouteWithChildren = ReceiptsRoute._addFileChildren(
+  ReceiptsRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
+  OnboardingRoute: OnboardingRoute,
+  ReceiptsRoute: ReceiptsRouteWithChildren,
+  ScanRoute: ScanRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
