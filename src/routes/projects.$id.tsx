@@ -216,8 +216,8 @@ function Stat({
 }: {
   label: string;
   value: string;
-  hint?: string;
-  tone?: "good" | "bad";
+  hint?: string | undefined;
+  tone?: "good" | "bad" | undefined;
 }) {
   return (
     <div>

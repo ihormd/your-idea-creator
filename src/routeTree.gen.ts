@@ -12,8 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ReceiptsRouteImport } from './routes/receipts'
 import { Route as ScanRouteImport } from './routes/scan'
+import { Route as ProjectsIdRouteImport } from './routes/projects.$id'
 import { Route as ReceiptsIdRouteImport } from './routes/receipts.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -31,6 +33,11 @@ const OnboardingRoute = OnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjectsRoute = ProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReceiptsRoute = ReceiptsRouteImport.update({
   id: '/receipts',
   path: '/receipts',
@@ -40,6 +47,11 @@ const ScanRoute = ScanRouteImport.update({
   id: '/scan',
   path: '/scan',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsIdRoute = ProjectsIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ProjectsRoute,
 } as any)
 const ReceiptsIdRoute = ReceiptsIdRouteImport.update({
   id: '/$id',
@@ -51,16 +63,20 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
+  '/projects': typeof ProjectsRouteWithChildren
   '/receipts': typeof ReceiptsRouteWithChildren
   '/scan': typeof ScanRoute
+  '/projects/$id': typeof ProjectsIdRoute
   '/receipts/$id': typeof ReceiptsIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
+  '/projects': typeof ProjectsRouteWithChildren
   '/receipts': typeof ReceiptsRouteWithChildren
   '/scan': typeof ScanRoute
+  '/projects/$id': typeof ProjectsIdRoute
   '/receipts/$id': typeof ReceiptsIdRoute
 }
 export interface FileRoutesById {
@@ -68,23 +84,42 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/onboarding': typeof OnboardingRoute
+  '/projects': typeof ProjectsRouteWithChildren
   '/receipts': typeof ReceiptsRouteWithChildren
   '/scan': typeof ScanRoute
+  '/projects/$id': typeof ProjectsIdRoute
   '/receipts/$id': typeof ReceiptsIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/auth' | '/onboarding' | '/receipts' | '/scan' | '/receipts/$id'
+    | '/'
+    | '/auth'
+    | '/onboarding'
+    | '/projects'
+    | '/receipts'
+    | '/scan'
+    | '/projects/$id'
+    | '/receipts/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/onboarding' | '/receipts' | '/scan' | '/receipts/$id'
+  to:
+    | '/'
+    | '/auth'
+    | '/onboarding'
+    | '/projects'
+    | '/receipts'
+    | '/scan'
+    | '/projects/$id'
+    | '/receipts/$id'
   id:
     | '__root__'
     | '/'
     | '/auth'
     | '/onboarding'
+    | '/projects'
     | '/receipts'
     | '/scan'
+    | '/projects/$id'
     | '/receipts/$id'
   fileRoutesById: FileRoutesById
 }
@@ -92,6 +127,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
   OnboardingRoute: typeof OnboardingRoute
+  ProjectsRoute: typeof ProjectsRouteWithChildren
   ReceiptsRoute: typeof ReceiptsRouteWithChildren
   ScanRoute: typeof ScanRoute
 }
@@ -119,6 +155,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects': {
+      id: '/projects'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof ProjectsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/receipts': {
       id: '/receipts'
       path: '/receipts'
@@ -133,6 +176,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScanRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projects/$id': {
+      id: '/projects/$id'
+      path: '/$id'
+      fullPath: '/projects/$id'
+      preLoaderRoute: typeof ProjectsIdRouteImport
+      parentRoute: typeof ProjectsRoute
+    }
     '/receipts/$id': {
       id: '/receipts/$id'
       path: '/$id'
@@ -142,6 +192,18 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface ProjectsRouteChildren {
+  ProjectsIdRoute: typeof ProjectsIdRoute
+}
+
+const ProjectsRouteChildren: ProjectsRouteChildren = {
+  ProjectsIdRoute: ProjectsIdRoute,
+}
+
+const ProjectsRouteWithChildren = ProjectsRoute._addFileChildren(
+  ProjectsRouteChildren,
+)
 
 interface ReceiptsRouteChildren {
   ReceiptsIdRoute: typeof ReceiptsIdRoute
@@ -159,6 +221,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   OnboardingRoute: OnboardingRoute,
+  ProjectsRoute: ProjectsRouteWithChildren,
   ReceiptsRoute: ReceiptsRouteWithChildren,
   ScanRoute: ScanRoute,
 }
