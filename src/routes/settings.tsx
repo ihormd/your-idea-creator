@@ -65,7 +65,7 @@ function SettingsPage() {
   }
 
   return (
-    <AppShell title="Settings" subtitle={user?.email ?? undefined}>
+    <AppShell title="Settings" subtitle={user?.email ?? "Your account"}>
       <div className="panel space-y-4 p-4">
         <div className="space-y-1.5">
           <Label htmlFor="bn">Business name</Label>
