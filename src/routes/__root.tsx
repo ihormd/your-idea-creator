@@ -77,11 +77,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "JobLedger — AI receipts & job costing" },
+      {
+        name: "description",
+        content: "Scan receipts, capture GST/HST and track job profitability for Canadian contractors.",
+      },
+      { name: "author", content: "JobLedger" },
+      { property: "og:title", content: "JobLedger — AI receipts & job costing" },
+      {
+        property: "og:description",
+        content: "Snap a receipt, know your job costs, keep your accountant happy.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
