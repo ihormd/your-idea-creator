@@ -14,6 +14,69 @@ export type Database = {
   }
   public: {
     Tables: {
+      inbound_aliases: {
+        Row: {
+          active: boolean
+          alias: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          active?: boolean
+          alias: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          active?: boolean
+          alias?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      inbound_emails: {
+        Row: {
+          alias: string | null
+          attachments_count: number
+          created_at: string
+          error: string | null
+          from_email: string | null
+          id: string
+          receipts_created: number
+          status: string
+          subject: string | null
+          user_id: string | null
+        }
+        Insert: {
+          alias?: string | null
+          attachments_count?: number
+          created_at?: string
+          error?: string | null
+          from_email?: string | null
+          id?: string
+          receipts_created?: number
+          status?: string
+          subject?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          alias?: string | null
+          attachments_count?: number
+          created_at?: string
+          error?: string | null
+          from_email?: string | null
+          id?: string
+          receipts_created?: number
+          status?: string
+          subject?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           accounting_software: string
@@ -160,6 +223,7 @@ export type Database = {
           receipt_date: string | null
           receipt_number: string | null
           review_status: Database["public"]["Enums"]["review_status"]
+          source: string
           subtotal: number | null
           total: number
           updated_at: string
@@ -184,6 +248,7 @@ export type Database = {
           receipt_date?: string | null
           receipt_number?: string | null
           review_status?: Database["public"]["Enums"]["review_status"]
+          source?: string
           subtotal?: number | null
           total?: number
           updated_at?: string
@@ -208,6 +273,7 @@ export type Database = {
           receipt_date?: string | null
           receipt_number?: string | null
           review_status?: Database["public"]["Enums"]["review_status"]
+          source?: string
           subtotal?: number | null
           total?: number
           updated_at?: string
