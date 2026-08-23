@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
+import { EmailForwarding } from "@/components/EmailForwarding";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -124,6 +125,8 @@ function SettingsPage() {
           Save settings
         </Button>
       </div>
+
+      <EmailForwarding userId={user?.id} />
 
       <p className="mt-4 text-center text-xs text-muted-foreground">
         Receipt images stay private to your account. JobLedger is not tax or accounting advice.
