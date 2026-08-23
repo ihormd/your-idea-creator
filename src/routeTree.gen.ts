@@ -19,6 +19,7 @@ import { Route as ScanRouteImport } from './routes/scan'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ProjectsIdRouteImport } from './routes/projects.$id'
 import { Route as ReceiptsIdRouteImport } from './routes/receipts.$id'
+import { Route as ApiPublicInboundReceiptsRouteImport } from './routes/api/public/inbound-receipts'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -70,6 +71,12 @@ const ReceiptsIdRoute = ReceiptsIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => ReceiptsRoute,
 } as any)
+const ApiPublicInboundReceiptsRoute =
+  ApiPublicInboundReceiptsRouteImport.update({
+    id: '/api/public/inbound-receipts',
+    path: '/api/public/inbound-receipts',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -82,6 +89,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/projects/$id': typeof ProjectsIdRoute
   '/receipts/$id': typeof ReceiptsIdRoute
+  '/api/public/inbound-receipts': typeof ApiPublicInboundReceiptsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -94,6 +102,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/projects/$id': typeof ProjectsIdRoute
   '/receipts/$id': typeof ReceiptsIdRoute
+  '/api/public/inbound-receipts': typeof ApiPublicInboundReceiptsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -107,6 +116,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/projects/$id': typeof ProjectsIdRoute
   '/receipts/$id': typeof ReceiptsIdRoute
+  '/api/public/inbound-receipts': typeof ApiPublicInboundReceiptsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -121,6 +131,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/projects/$id'
     | '/receipts/$id'
+    | '/api/public/inbound-receipts'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -133,6 +144,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/projects/$id'
     | '/receipts/$id'
+    | '/api/public/inbound-receipts'
   id:
     | '__root__'
     | '/'
@@ -145,6 +157,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/projects/$id'
     | '/receipts/$id'
+    | '/api/public/inbound-receipts'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -156,6 +169,7 @@ export interface RootRouteChildren {
   ReportsRoute: typeof ReportsRoute
   ScanRoute: typeof ScanRoute
   SettingsRoute: typeof SettingsRoute
+  ApiPublicInboundReceiptsRoute: typeof ApiPublicInboundReceiptsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -230,6 +244,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReceiptsIdRouteImport
       parentRoute: typeof ReceiptsRoute
     }
+    '/api/public/inbound-receipts': {
+      id: '/api/public/inbound-receipts'
+      path: '/api/public/inbound-receipts'
+      fullPath: '/api/public/inbound-receipts'
+      preLoaderRoute: typeof ApiPublicInboundReceiptsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -266,6 +287,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReportsRoute: ReportsRoute,
   ScanRoute: ScanRoute,
   SettingsRoute: SettingsRoute,
+  ApiPublicInboundReceiptsRoute: ApiPublicInboundReceiptsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
