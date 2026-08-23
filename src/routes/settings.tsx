@@ -126,6 +126,8 @@ function SettingsPage() {
         </Button>
       </div>
 
+      <EmailForwarding userId={user?.id} />
+
       <p className="mt-4 text-center text-xs text-muted-foreground">
         Receipt images stay private to your account. JobLedger is not tax or accounting advice.
       </p>
