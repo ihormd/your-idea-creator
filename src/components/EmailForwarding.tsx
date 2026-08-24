@@ -16,7 +16,7 @@ function randomAlias() {
   return `rcpt-${out}`;
 }
 
-export function EmailForwarding({ userId }: { userId?: string }) {
+export function EmailForwarding({ userId }: { userId: string | undefined }) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
 
