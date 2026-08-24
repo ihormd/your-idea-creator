@@ -86,3 +86,50 @@ export function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["receipt"] });
   qc.invalidateQueries({ queryKey: ["projects"] });
 }
+
+export function useSignedFile(bucket: string, path: string | null | undefined) {
+  return useQuery({
+    queryKey: ["signed-file", bucket, path],
+    enabled: !!path,
+    staleTime: 1000 * 60 * 30,
+    queryFn: async () => {
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path!, 60 * 60);
+      if (error) throw error;
+      return data.signedUrl;
+    },
+  });
+}
+
+export function useUploadLogo(userId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (file: File) => {
+      const ext = (file.name.split(".").pop() || "png").toLowerCase();
+      const path = `${userId}/logo-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("branding").upload(path, file, { upsert: true });
+      if (error) throw error;
+      const { error: pErr } = await supabase.from("profiles").update({ logo_path: path }).eq("id", userId!);
+      if (pErr) throw pErr;
+      return path;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["profile"] });
+      qc.invalidateQueries({ queryKey: ["signed-file"] });
+    },
+  });
+}
+
+export function useRemoveLogo(userId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (path: string | null) => {
+      if (path) await supabase.storage.from("branding").remove([path]);
+      const { error } = await supabase.from("profiles").update({ logo_path: null }).eq("id", userId!);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["profile"] });
+      qc.invalidateQueries({ queryKey: ["signed-file"] });
+    },
+  });
+}
