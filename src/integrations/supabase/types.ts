@@ -86,9 +86,12 @@ export type Database = {
           country: string
           created_at: string
           currency: string
+          export_audience: string
           id: string
+          logo_path: string | null
           mode: Database["public"]["Enums"]["app_mode"]
           onboarded: boolean
+          theme: string
           updated_at: string
         }
         Insert: {
@@ -99,9 +102,12 @@ export type Database = {
           country?: string
           created_at?: string
           currency?: string
+          export_audience?: string
           id: string
+          logo_path?: string | null
           mode?: Database["public"]["Enums"]["app_mode"]
           onboarded?: boolean
+          theme?: string
           updated_at?: string
         }
         Update: {
@@ -112,9 +118,12 @@ export type Database = {
           country?: string
           created_at?: string
           currency?: string
+          export_audience?: string
           id?: string
+          logo_path?: string | null
           mode?: Database["public"]["Enums"]["app_mode"]
           onboarded?: boolean
+          theme?: string
           updated_at?: string
         }
         Relationships: []
