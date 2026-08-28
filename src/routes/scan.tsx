@@ -6,18 +6,31 @@ import { Camera, ImageUp, Layers, Loader2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
-import { useProfile, useProjects } from "@/lib/queries";
+import { useBusiness } from "@/lib/business";
+import { useProjects } from "@/lib/queries";
 import { supabase } from "@/integrations/supabase/client";
-import { CATEGORIES, validateReceipt, type ExpenseCategory, type PaymentMethod } from "@/lib/domain";
+import {
+  CATEGORIES,
+  validateReceipt,
+  type ExpenseCategory,
+  type PaymentMethod,
+} from "@/lib/domain";
 import { extractReceipt } from "@/lib/receipt-ai.functions";
 
 export const Route = createFileRoute("/scan")({
   head: () => ({
     meta: [
       { title: "Scan a receipt — JobLedger" },
-      { name: "description", content: "Snap, upload or bulk-import receipts and let AI capture vendor, date, GST/HST and total." },
+      {
+        name: "description",
+        content:
+          "Snap, upload or bulk-import receipts and let AI capture vendor, date, GST/HST and total.",
+      },
       { property: "og:title", content: "Scan a receipt — JobLedger" },
-      { property: "og:description", content: "AI receipt capture with Canadian tax handling and bulk import." },
+      {
+        property: "og:description",
+        content: "AI receipt capture with Canadian tax handling and bulk import.",
+      },
     ],
   }),
   component: ScanPage,
@@ -32,8 +45,8 @@ type BulkItem = { name: string; state: "queued" | "working" | "done" | "error"; 
 function ScanPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { data: profile } = useProfile(user?.id);
-  const { data: projects = [] } = useProjects(user?.id);
+  const { businessId, business } = useBusiness();
+  const { data: projects = [] } = useProjects(businessId);
   const extract = useServerFn(extractReceipt);
   const cameraRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -43,13 +56,13 @@ function ScanPage() {
   const [bulk, setBulk] = useState<BulkItem[] | null>(null);
 
   async function processFile(file: File, source: "scan" | "bulk") {
-    if (!user) throw new Error("You need to be signed in.");
+    if (!user || !businessId) throw new Error("You need to be signed in.");
     const dataUrl = await toDataUrl(file);
     if (source === "scan") setPreview(dataUrl);
 
     if (source === "scan") setStep("uploading");
     const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-    const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
+    const path = `${businessId}/${crypto.randomUUID()}.${ext}`;
     const up = await supabase.storage.from("receipts").upload(path, file, {
       contentType: file.type || "image/jpeg",
       upsert: false,
@@ -60,7 +73,7 @@ function ScanPage() {
     const ai = await extract({
       data: {
         imageDataUrl: dataUrl,
-        mode: profile?.mode === "job" ? "job" : "expense",
+        mode: business?.mode === "job" ? "job" : "expense",
         categories: CATEGORY_VALUES,
         projects: projects.map((p) => ({ id: p.id, name: p.name, customer: p.customer })),
       },
@@ -70,7 +83,9 @@ function ScanPage() {
     const category = (CATEGORY_VALUES as string[]).includes(ai.category ?? "")
       ? (ai.category as ExpenseCategory)
       : "other";
-    const payment = PAYMENTS.includes(ai.payment_method ?? "") ? (ai.payment_method as PaymentMethod) : null;
+    const payment = PAYMENTS.includes(ai.payment_method ?? "")
+      ? (ai.payment_method as PaymentMethod)
+      : null;
     const projectId =
       ai.suggested_project_id && projects.some((p) => p.id === ai.suggested_project_id)
         ? ai.suggested_project_id
@@ -86,13 +101,43 @@ function ScanPage() {
         vendor: ai.vendor,
         project_id: projectId,
       },
-      profile?.mode === "job" ? "job" : "expense",
+      business?.mode === "job" ? "job" : "expense",
     );
+
+    // Duplicate detection: same vendor + same total, dated within 3 days of
+    // each other, already in this business's vault. Doesn't block saving —
+    // flags it as a warning so the reviewer decides (they might have
+    // genuinely bought the same thing twice).
+    let duplicateOf: string | null = null;
+    if (ai.vendor && ai.total) {
+      const { data: candidates } = await supabase
+        .from("receipts")
+        .select("id, receipt_date, total")
+        .eq("business_id", businessId)
+        .ilike("vendor", ai.vendor)
+        .eq("total", ai.total)
+        .is("duplicate_of", null)
+        .limit(5);
+      const match = (candidates ?? []).find((c) => {
+        if (!ai.receipt_date || !c.receipt_date) return true;
+        const days =
+          Math.abs(new Date(ai.receipt_date).getTime() - new Date(c.receipt_date).getTime()) /
+          86400000;
+        return days <= 3;
+      });
+      if (match) {
+        duplicateOf = match.id;
+        warnings.push(
+          "Possible duplicate — a receipt with the same vendor and total is already in your vault.",
+        );
+      }
+    }
 
     const { data: inserted, error } = await supabase
       .from("receipts")
       .insert({
-        user_id: user.id,
+        business_id: businessId,
+        uploaded_by: user.id,
         image_path: path,
         vendor: ai.vendor,
         receipt_date: ai.receipt_date,
@@ -107,6 +152,7 @@ function ScanPage() {
         project_id: projectId,
         review_status: "needs_review",
         warnings,
+        duplicate_of: duplicateOf,
         ai_confidence: ai.confidence,
         notes: ai.notes_for_reviewer,
         source,
@@ -129,22 +175,28 @@ function ScanPage() {
 
   async function handleBulk(files: File[]) {
     const list = files.slice(0, MAX_BULK);
-    if (files.length > MAX_BULK) toast.message(`Only the first ${MAX_BULK} images will be imported.`);
+    if (files.length > MAX_BULK)
+      toast.message(`Only the first ${MAX_BULK} images will be imported.`);
     setBulk(list.map((f) => ({ name: f.name, state: "queued" as const })));
     let ok = 0;
     for (let i = 0; i < list.length; i++) {
-      setBulk((prev) => prev?.map((it, idx) => (idx === i ? { ...it, state: "working" } : it)) ?? prev);
+      setBulk(
+        (prev) => prev?.map((it, idx) => (idx === i ? { ...it, state: "working" } : it)) ?? prev,
+      );
       try {
         await processFile(list[i]!, "bulk");
         ok += 1;
-        setBulk((prev) => prev?.map((it, idx) => (idx === i ? { ...it, state: "done" } : it)) ?? prev);
+        setBulk(
+          (prev) => prev?.map((it, idx) => (idx === i ? { ...it, state: "done" } : it)) ?? prev,
+        );
       } catch (e) {
-        setBulk((prev) =>
-          prev?.map((it, idx) =>
-            idx === i
-              ? { ...it, state: "error", message: e instanceof Error ? e.message : "Failed" }
-              : it,
-          ) ?? prev,
+        setBulk(
+          (prev) =>
+            prev?.map((it, idx) =>
+              idx === i
+                ? { ...it, state: "error", message: e instanceof Error ? e.message : "Failed" }
+                : it,
+            ) ?? prev,
         );
       }
     }
@@ -179,13 +231,28 @@ function ScanPage() {
                   : "Saving expense…"}
             </div>
           ) : null}
-          <Button className="w-full" size="lg" disabled={busy} onClick={() => cameraRef.current?.click()}>
+          <Button
+            className="w-full"
+            size="lg"
+            disabled={busy}
+            onClick={() => cameraRef.current?.click()}
+          >
             <Camera /> Take photo
           </Button>
-          <Button variant="outline" className="w-full" disabled={busy} onClick={() => fileRef.current?.click()}>
+          <Button
+            variant="outline"
+            className="w-full"
+            disabled={busy}
+            onClick={() => fileRef.current?.click()}
+          >
             <ImageUp /> Upload from library
           </Button>
-          <Button variant="outline" className="w-full" disabled={busy} onClick={() => bulkRef.current?.click()}>
+          <Button
+            variant="outline"
+            className="w-full"
+            disabled={busy}
+            onClick={() => bulkRef.current?.click()}
+          >
             <Layers /> Bulk import (up to {MAX_BULK})
           </Button>
           <input
@@ -247,13 +314,23 @@ function ScanPage() {
                         : "shrink-0 text-muted-foreground"
                   }
                 >
-                  {b.state === "working" ? "reading…" : b.state === "done" ? "imported" : b.state === "error" ? (b.message ?? "failed") : "queued"}
+                  {b.state === "working"
+                    ? "reading…"
+                    : b.state === "done"
+                      ? "imported"
+                      : b.state === "error"
+                        ? (b.message ?? "failed")
+                        : "queued"}
                 </span>
               </li>
             ))}
           </ul>
           {!bulkRunning ? (
-            <Button variant="outline" className="mt-3 w-full" onClick={() => navigate({ to: "/receipts" })}>
+            <Button
+              variant="outline"
+              className="mt-3 w-full"
+              onClick={() => navigate({ to: "/receipts" })}
+            >
               Review imported receipts
             </Button>
           ) : null}

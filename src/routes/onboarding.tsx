@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Briefcase, ReceiptText } from "lucide-react";
 import { useAuth } from "@/lib/auth";
-import { useProfile, useUpdateProfile } from "@/lib/queries";
+import { useBusiness } from "@/lib/business";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,9 +15,16 @@ export const Route = createFileRoute("/onboarding")({
   head: () => ({
     meta: [
       { title: "Set up your business — JobLedger" },
-      { name: "description", content: "Tell JobLedger about your business and pick job costing or simple expense tracking." },
+      {
+        name: "description",
+        content:
+          "Tell JobLedger about your business and pick job costing or simple expense tracking.",
+      },
       { property: "og:title", content: "Set up your business — JobLedger" },
-      { property: "og:description", content: "Choose job costing or expense tracking and start scanning receipts." },
+      {
+        property: "og:description",
+        content: "Choose job costing or expense tracking and start scanning receipts.",
+      },
     ],
   }),
   component: Onboarding,
@@ -26,8 +33,7 @@ export const Route = createFileRoute("/onboarding")({
 function Onboarding() {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
-  const { data: profile } = useProfile(user?.id);
-  const update = useUpdateProfile(user?.id);
+  const { hasAnyBusiness, business, loading: bizLoading } = useBusiness();
 
   const [businessName, setBusinessName] = useState("");
   const [mode, setMode] = useState<AppMode>("job");
@@ -42,9 +48,14 @@ function Onboarding() {
     if (!loading && !user) navigate({ to: "/auth" });
   }, [loading, user, navigate]);
 
+  // Someone invited as an accountant already has an active membership the
+  // moment they sign up (see link_pending_memberships()) — they don't create
+  // their own business, so send them straight in instead of showing this form.
   useEffect(() => {
-    if (profile?.business_name) setBusinessName(profile.business_name);
-  }, [profile?.business_name]);
+    if (!bizLoading && hasAnyBusiness && business?.onboarded) {
+      navigate({ to: "/" });
+    }
+  }, [bizLoading, hasAnyBusiness, business, navigate]);
 
   async function finish() {
     if (!businessName.trim()) {
@@ -53,15 +64,22 @@ function Onboarding() {
     }
     setBusy(true);
     try {
-      await update.mutateAsync({
-        business_name: businessName.trim(),
-        mode,
-        accounting_software: accounting,
-        onboarded: true,
+      const { data: businessId, error: createErr } = await supabase.rpc("create_business", {
+        p_name: businessName.trim(),
+        p_mode: mode,
       });
+      if (createErr || !businessId) throw createErr ?? new Error("Could not create your business");
+
+      const { error: updateErr } = await supabase
+        .from("businesses")
+        .update({ accounting_software: accounting, onboarded: true })
+        .eq("id", businessId);
+      if (updateErr) throw updateErr;
+
       if (mode === "job" && projectName.trim()) {
         const { error } = await supabase.from("projects").insert({
-          user_id: user!.id,
+          business_id: businessId,
+          created_by: user!.id,
           name: projectName.trim(),
           customer: customer.trim() || null,
           cost_budget: Number(costBudget) || 0,
@@ -85,7 +103,12 @@ function Onboarding() {
       <div className="panel mt-6 space-y-5 p-5">
         <div className="space-y-1.5">
           <Label htmlFor="bn">Business name</Label>
-          <Input id="bn" value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="Northside Renovations" />
+          <Input
+            id="bn"
+            value={businessName}
+            onChange={(e) => setBusinessName(e.target.value)}
+            placeholder="Northside Renovations"
+          />
         </div>
 
         <div className="space-y-2">
@@ -122,14 +145,18 @@ function Onboarding() {
                 onClick={() => setAccounting(o.v)}
                 className={cn(
                   "rounded-full border px-3 py-1.5 text-sm transition-colors",
-                  accounting === o.v ? "border-primary bg-primary text-primary-foreground" : "border-border bg-surface",
+                  accounting === o.v
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-surface",
                 )}
               >
                 {o.l}
               </button>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">Sync is on the roadmap — exports work today.</p>
+          <p className="text-xs text-muted-foreground">
+            Sync is on the roadmap — exports work today.
+          </p>
         </div>
 
         {mode === "job" ? (
@@ -137,7 +164,12 @@ function Onboarding() {
             <p className="text-sm font-medium">Create your first project (optional)</p>
             <div className="space-y-1.5">
               <Label htmlFor="pn">Project name</Label>
-              <Input id="pn" value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="Kitchen remodel — 42 Elm St" />
+              <Input
+                id="pn"
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                placeholder="Kitchen remodel — 42 Elm St"
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="cu">Customer</Label>
@@ -146,11 +178,23 @@ function Onboarding() {
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="cb">Cost budget</Label>
-                <Input id="cb" inputMode="decimal" value={costBudget} onChange={(e) => setCostBudget(e.target.value)} placeholder="0.00" />
+                <Input
+                  id="cb"
+                  inputMode="decimal"
+                  value={costBudget}
+                  onChange={(e) => setCostBudget(e.target.value)}
+                  placeholder="0.00"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="rv">Contract revenue</Label>
-                <Input id="rv" inputMode="decimal" value={revenue} onChange={(e) => setRevenue(e.target.value)} placeholder="0.00" />
+                <Input
+                  id="rv"
+                  inputMode="decimal"
+                  value={revenue}
+                  onChange={(e) => setRevenue(e.target.value)}
+                  placeholder="0.00"
+                />
               </div>
             </div>
           </div>
@@ -186,7 +230,12 @@ function ModeCard({
         active ? "border-primary bg-secondary" : "border-border bg-surface hover:border-primary/40",
       )}
     >
-      <div className={cn("mb-2 flex size-9 items-center justify-center rounded-lg", active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>
+      <div
+        className={cn(
+          "mb-2 flex size-9 items-center justify-center rounded-lg",
+          active ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+        )}
+      >
         {icon}
       </div>
       <p className="font-medium">{title}</p>

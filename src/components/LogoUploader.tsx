@@ -6,17 +6,17 @@ import { Button } from "@/components/ui/button";
 import { useRemoveLogo, useUploadLogo } from "@/lib/queries";
 
 export function LogoUploader({
-  userId,
+  businessId,
   logoPath,
   name,
 }: {
-  userId: string | undefined;
+  businessId: string | null | undefined;
   logoPath: string | null | undefined;
   name: string | null | undefined;
 }) {
   const input = useRef<HTMLInputElement>(null);
-  const upload = useUploadLogo(userId);
-  const remove = useRemoveLogo(userId);
+  const upload = useUploadLogo(businessId);
+  const remove = useRemoveLogo(businessId);
   const [busy, setBusy] = useState(false);
 
   async function pick(file?: File) {
@@ -45,7 +45,13 @@ export function LogoUploader({
           Shown beside your business name and on exports. Square images look best.
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
-          <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => input.current?.click()}>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => input.current?.click()}
+          >
             <ImagePlus /> {logoPath ? "Replace" : "Upload"}
           </Button>
           {logoPath ? (

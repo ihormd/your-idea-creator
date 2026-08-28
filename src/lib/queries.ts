@@ -1,38 +1,46 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import type { Profile, Project, Receipt } from "./domain";
+import type { Business, Project, Receipt } from "./domain";
 
-export function useProfile(userId?: string) {
+export function useBusinessRow(businessId?: string | null) {
   return useQuery({
-    queryKey: ["profile", userId],
-    enabled: !!userId,
-    queryFn: async (): Promise<Profile | null> => {
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", userId!).maybeSingle();
+    queryKey: ["business", businessId],
+    enabled: !!businessId,
+    queryFn: async (): Promise<Business | null> => {
+      const { data, error } = await supabase
+        .from("businesses")
+        .select("*")
+        .eq("id", businessId!)
+        .maybeSingle();
       if (error) throw error;
       return data;
     },
   });
 }
 
-export function useUpdateProfile(userId?: string) {
+export function useUpdateBusiness(businessId?: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (patch: Partial<Profile>) => {
-      const { error } = await supabase.from("profiles").update(patch).eq("id", userId!);
+    mutationFn: async (patch: Partial<Business>) => {
+      const { error } = await supabase.from("businesses").update(patch).eq("id", businessId!);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["profile"] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["business"] });
+      void qc.invalidateQueries({ queryKey: ["memberships"] });
+    },
   });
 }
 
-export function useProjects(userId?: string) {
+export function useProjects(businessId?: string | null) {
   return useQuery({
-    queryKey: ["projects", userId],
-    enabled: !!userId,
+    queryKey: ["projects", businessId],
+    enabled: !!businessId,
     queryFn: async (): Promise<Project[]> => {
       const { data, error } = await supabase
         .from("projects")
         .select("*")
+        .eq("business_id", businessId!)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data ?? [];
@@ -40,14 +48,15 @@ export function useProjects(userId?: string) {
   });
 }
 
-export function useReceipts(userId?: string) {
+export function useReceipts(businessId?: string | null) {
   return useQuery({
-    queryKey: ["receipts", userId],
-    enabled: !!userId,
+    queryKey: ["receipts", businessId],
+    enabled: !!businessId,
     queryFn: async (): Promise<Receipt[]> => {
       const { data, error } = await supabase
         .from("receipts")
         .select("*")
+        .eq("business_id", businessId!)
         .order("receipt_date", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false });
       if (error) throw error;
@@ -61,7 +70,11 @@ export function useReceipt(id?: string) {
     queryKey: ["receipt", id],
     enabled: !!id,
     queryFn: async (): Promise<Receipt | null> => {
-      const { data, error } = await supabase.from("receipts").select("*").eq("id", id!).maybeSingle();
+      const { data, error } = await supabase
+        .from("receipts")
+        .select("*")
+        .eq("id", id!)
+        .maybeSingle();
       if (error) throw error;
       return data;
     },
@@ -74,7 +87,9 @@ export function useSignedImage(path: string | null | undefined) {
     enabled: !!path,
     staleTime: 1000 * 60 * 30,
     queryFn: async () => {
-      const { data, error } = await supabase.storage.from("receipts").createSignedUrl(path!, 60 * 60);
+      const { data, error } = await supabase.storage
+        .from("receipts")
+        .createSignedUrl(path!, 60 * 60);
       if (error) throw error;
       return data.signedUrl;
     },
@@ -82,9 +97,9 @@ export function useSignedImage(path: string | null | undefined) {
 }
 
 export function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
-  qc.invalidateQueries({ queryKey: ["receipts"] });
-  qc.invalidateQueries({ queryKey: ["receipt"] });
-  qc.invalidateQueries({ queryKey: ["projects"] });
+  void qc.invalidateQueries({ queryKey: ["receipts"] });
+  void qc.invalidateQueries({ queryKey: ["receipt"] });
+  void qc.invalidateQueries({ queryKey: ["projects"] });
 }
 
 export function useSignedFile(bucket: string, path: string | null | undefined) {
@@ -100,36 +115,44 @@ export function useSignedFile(bucket: string, path: string | null | undefined) {
   });
 }
 
-export function useUploadLogo(userId?: string) {
+export function useUploadLogo(businessId?: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (file: File) => {
       const ext = (file.name.split(".").pop() || "png").toLowerCase();
-      const path = `${userId}/logo-${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from("branding").upload(path, file, { upsert: true });
+      const path = `${businessId}/logo-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage
+        .from("branding")
+        .upload(path, file, { upsert: true });
       if (error) throw error;
-      const { error: pErr } = await supabase.from("profiles").update({ logo_path: path }).eq("id", userId!);
-      if (pErr) throw pErr;
+      const { error: bErr } = await supabase
+        .from("businesses")
+        .update({ logo_path: path })
+        .eq("id", businessId!);
+      if (bErr) throw bErr;
       return path;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["profile"] });
-      qc.invalidateQueries({ queryKey: ["signed-file"] });
+      void qc.invalidateQueries({ queryKey: ["business"] });
+      void qc.invalidateQueries({ queryKey: ["signed-file"] });
     },
   });
 }
 
-export function useRemoveLogo(userId?: string) {
+export function useRemoveLogo(businessId?: string | null) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (path: string | null) => {
       if (path) await supabase.storage.from("branding").remove([path]);
-      const { error } = await supabase.from("profiles").update({ logo_path: null }).eq("id", userId!);
+      const { error } = await supabase
+        .from("businesses")
+        .update({ logo_path: null })
+        .eq("id", businessId!);
       if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["profile"] });
-      qc.invalidateQueries({ queryKey: ["signed-file"] });
+      void qc.invalidateQueries({ queryKey: ["business"] });
+      void qc.invalidateQueries({ queryKey: ["signed-file"] });
     },
   });
 }

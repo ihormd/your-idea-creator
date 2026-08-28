@@ -1,30 +1,46 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Download } from "lucide-react";
+import { toast } from "sonner";
+import { Download, FileSpreadsheet, FileText, Loader2, Package } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAuth } from "@/lib/auth";
+import { useBusiness } from "@/lib/business";
 import { useProjects, useReceipts } from "@/lib/queries";
-import { CATEGORIES, categoryLabel, money, num } from "@/lib/domain";
+import { CATEGORIES, money, num } from "@/lib/domain";
+import {
+  exportAccountantPackage,
+  exportCsv,
+  exportExpensePdf,
+  exportTaxSummaryPdf,
+  exportXlsx,
+} from "@/lib/export";
 
 export const Route = createFileRoute("/reports")({
   head: () => ({
     meta: [
       { title: "Reports & exports — JobLedger" },
-      { name: "description", content: "Summaries by category and project, plus accountant-ready CSV exports." },
+      {
+        name: "description",
+        content: "Summaries by category and project, plus accountant-ready exports.",
+      },
       { property: "og:title", content: "Reports & exports — JobLedger" },
-      { property: "og:description", content: "Export your expenses and GST/HST totals in one click." },
+      {
+        property: "og:description",
+        content: "Export your expenses, GST/HST totals, and receipt images in one click.",
+      },
     ],
   }),
   component: Reports,
 });
 
 function Reports() {
-  const { user } = useAuth();
-  const { data: receipts = [] } = useReceipts(user?.id);
-  const { data: projects = [] } = useProjects(user?.id);
+  const { business, businessId } = useBusiness();
+  const { data: receipts = [] } = useReceipts(businessId);
+  const { data: projects = [] } = useProjects(businessId);
+  const [packing, setPacking] = useState(false);
+  const [packProgress, setPackProgress] = useState({ done: 0, total: 0 });
 
   const today = new Date();
   const firstOfYear = `${today.getFullYear()}-01-01`;
@@ -59,44 +75,18 @@ function Reports() {
     .filter((p) => p.value > 0)
     .sort((a, b) => b.value - a.value);
 
-  function exportCsv() {
-    const header = [
-      "Date",
-      "Vendor",
-      "Category",
-      "Project",
-      "Subtotal",
-      "GST/HST",
-      "Other tax",
-      "Total",
-      "Currency",
-      "Payment method",
-      "Receipt #",
-      "Status",
-    ];
-    const rows = inRange.map((r) => [
-      r.receipt_date ?? "",
-      r.vendor ?? "",
-      categoryLabel(r.category),
-      projects.find((p) => p.id === r.project_id)?.name ?? "",
-      num(r.subtotal).toFixed(2),
-      num(r.gst_hst).toFixed(2),
-      num(r.other_tax).toFixed(2),
-      num(r.total).toFixed(2),
-      r.currency,
-      r.payment_method ?? "",
-      r.receipt_number ?? "",
-      r.review_status,
-    ]);
-    const csv = [header, ...rows]
-      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `jobledger-expenses-${from}-to-${to}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  async function handlePackage() {
+    setPacking(true);
+    setPackProgress({ done: 0, total: inRange.length });
+    try {
+      await exportAccountantPackage(business, inRange, projects, from, to, (done, total) =>
+        setPackProgress({ done, total }),
+      );
+    } catch {
+      toast.error("Couldn't build the export package. Try again.");
+    } finally {
+      setPacking(false);
+    }
   }
 
   return (
@@ -114,20 +104,86 @@ function Reports() {
         </div>
 
         <div className="panel grid grid-cols-3 gap-3 p-4">
-          <Metric label="Total spend" value={money(total)} />
-          <Metric label="GST/HST" value={money(gst)} />
-          <Metric label="Other tax" value={money(other)} />
+          <Metric label="Total spend" value={money(total, business?.currency)} />
+          <Metric label="GST/HST" value={money(gst, business?.currency)} />
+          <Metric label="Other tax" value={money(other, business?.currency)} />
         </div>
 
-        <Breakdown title="By category" rows={byCategory} total={total} />
-        {byProject.length ? <Breakdown title="By project" rows={byProject} total={total} /> : null}
+        <Breakdown
+          title="By category"
+          rows={byCategory}
+          total={total}
+          currency={business?.currency}
+        />
+        {byProject.length ? (
+          <Breakdown
+            title="By project"
+            rows={byProject}
+            total={total}
+            currency={business?.currency}
+          />
+        ) : null}
 
-        <Button className="w-full" onClick={exportCsv} disabled={inRange.length === 0}>
-          <Download /> Export {inRange.length} receipts to CSV
-        </Button>
-        <p className="text-center text-xs text-muted-foreground">
-          CSV works with QuickBooks Online, Xero and your accountant's spreadsheet.
-        </p>
+        <div className="panel space-y-3 p-4">
+          <p className="text-sm font-medium">Export {inRange.length} receipts</p>
+
+          <Button
+            className="w-full"
+            disabled={inRange.length === 0 || packing}
+            onClick={handlePackage}
+          >
+            {packing ? (
+              <>
+                <Loader2 className="animate-spin" /> Packing {packProgress.done}/
+                {packProgress.total} receipts…
+              </>
+            ) : (
+              <>
+                <Package /> Full accountant package (.zip)
+              </>
+            )}
+          </Button>
+          <p className="text-center text-xs text-muted-foreground">
+            CSV + Excel + expense report PDF + tax summary PDF + every receipt photo, bundled
+            together.
+          </p>
+
+          <div className="grid grid-cols-3 gap-2 pt-1">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={inRange.length === 0}
+              onClick={() => exportCsv(inRange, projects, from, to)}
+            >
+              <Download className="size-3.5" /> CSV
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={inRange.length === 0}
+              onClick={() => exportXlsx(inRange, projects, from, to)}
+            >
+              <FileSpreadsheet className="size-3.5" /> Excel
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={inRange.length === 0}
+              onClick={() => exportExpensePdf(business, inRange, projects, from, to)}
+            >
+              <FileText className="size-3.5" /> PDF
+            </Button>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full"
+            disabled={inRange.length === 0}
+            onClick={() => exportTaxSummaryPdf(business, inRange, projects, from, to)}
+          >
+            <FileText className="size-3.5" /> GST/HST summary only (PDF)
+          </Button>
+        </div>
       </div>
     </AppShell>
   );
@@ -146,10 +202,12 @@ function Breakdown({
   title,
   rows,
   total,
+  currency,
 }: {
   title: string;
   rows: { label: string; value: number }[];
   total: number;
+  currency: string | undefined;
 }) {
   return (
     <div className="panel p-4">
@@ -162,7 +220,7 @@ function Breakdown({
             <li key={r.label}>
               <div className="flex justify-between text-sm">
                 <span className="truncate">{r.label}</span>
-                <span className="tabular-nums font-medium">{money(r.value)}</span>
+                <span className="tabular-nums font-medium">{money(r.value, currency)}</span>
               </div>
               <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
                 <div

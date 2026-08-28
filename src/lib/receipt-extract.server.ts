@@ -1,5 +1,13 @@
 // Server-only receipt extraction core, shared by the scan server function
 // and the inbound-email webhook.
+//
+// Calls OpenAI directly (your own API key, your own billing) — this used
+// to go through a third-party AI gateway with a proxied key, which meant
+// the app's core feature depended on a third party's proxy and credit
+// balance. If you'd rather use a different provider, only this function
+// needs to change: swap the endpoint/model/auth below, the request body is
+// already OpenAI-compatible (most providers — Groq, OpenRouter, Azure
+// OpenAI — accept this exact shape with just a different base URL).
 
 export type ExtractedReceipt = {
   vendor: string | null;
@@ -25,7 +33,7 @@ export type ExtractInput = {
 };
 
 export async function extractReceiptFromImage(data: ExtractInput): Promise<ExtractedReceipt> {
-  const key = process.env["LOVABLE_API_KEY"];
+  const key = process.env["OPENAI_API_KEY"];
   if (!key) throw new Error("AI is not configured for this app.");
 
   const projectList = data.projects.length
@@ -46,7 +54,7 @@ export async function extractReceiptFromImage(data: ExtractInput): Promise<Extra
   ].join("\n");
 
   const body = {
-    model: "google/gemini-3.7-flash",
+    model: "gpt-4o-mini",
     messages: [
       { role: "system", content: system },
       {
@@ -111,16 +119,17 @@ export async function extractReceiptFromImage(data: ExtractInput): Promise<Extra
     },
   };
 
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Lovable-API-Key": key },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify(body),
   });
 
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 429) throw new Error("AI is busy right now. Please try again in a moment.");
-    if (res.status === 402) throw new Error("AI credits are exhausted. Add credits in Lovable to keep scanning.");
+    if (res.status === 402 || res.status === 401)
+      throw new Error("AI is not available right now — check the OpenAI API key and billing.");
     throw new Error(`Receipt reading failed (${res.status}): ${text.slice(0, 300)}`);
   }
 

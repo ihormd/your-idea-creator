@@ -8,9 +8,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/lib/auth";
-import { invalidateAll, useProfile, useProjects, useReceipt, useSignedImage } from "@/lib/queries";
+import { useBusiness } from "@/lib/business";
+import { invalidateAll, useProjects, useReceipt, useSignedImage } from "@/lib/queries";
 import { supabase } from "@/integrations/supabase/client";
 import {
   CATEGORIES,
@@ -26,7 +33,10 @@ export const Route = createFileRoute("/receipts/$id")({
   head: () => ({
     meta: [
       { title: "Review receipt — JobLedger" },
-      { name: "description", content: "Check the AI-extracted vendor, taxes and totals, then approve the expense." },
+      {
+        name: "description",
+        content: "Check the AI-extracted vendor, taxes and totals, then approve the expense.",
+      },
       { property: "og:title", content: "Review receipt — JobLedger" },
       { property: "og:description", content: "Approve receipts before they hit your job costs." },
     ],
@@ -39,10 +49,11 @@ function ReceiptDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { data: profile } = useProfile(user?.id);
+  const { businessId, business, role } = useBusiness();
   const { data: receipt, isLoading } = useReceipt(id);
-  const { data: projects = [] } = useProjects(user?.id);
+  const { data: projects = [] } = useProjects(businessId);
   const { data: imageUrl } = useSignedImage(receipt?.image_path);
+  const { data: originalReceipt } = useReceipt(receipt?.duplicate_of ?? undefined);
 
   const [form, setForm] = useState({
     vendor: "",
@@ -88,31 +99,83 @@ function ReceiptDetail() {
       vendor: form.vendor || null,
       project_id: form.project_id === "none" ? null : form.project_id,
     },
-    profile?.mode === "job" ? "job" : "expense",
+    business?.mode === "job" ? "job" : "expense",
   );
+
+  // Trackable fields we log to receipt_audit when they change — matches the
+  // "All changes are auditable" acceptance criterion. Deliberately excludes
+  // free-text `notes` diffs from being read by the audit list UI in gory
+  // detail (still logged), and skips warnings/timestamps which aren't
+  // meaningful edits a reviewer or accountant made.
+  async function logAudit(before: typeof receipt, after: Record<string, unknown>) {
+    if (!before || !businessId || !user) return;
+    const fields: [string, unknown, unknown][] = [
+      ["vendor", before.vendor, after["vendor"]],
+      ["receipt_date", before.receipt_date, after["receipt_date"]],
+      ["subtotal", before.subtotal, after["subtotal"]],
+      ["gst_hst", before.gst_hst, after["gst_hst"]],
+      ["other_tax", before.other_tax, after["other_tax"]],
+      ["total", before.total, after["total"]],
+      ["receipt_number", before.receipt_number, after["receipt_number"]],
+      ["category", before.category, after["category"]],
+      ["payment_method", before.payment_method, after["payment_method"]],
+      ["project_id", before.project_id, after["project_id"]],
+      ["notes", before.notes, after["notes"]],
+      ["review_status", before.review_status, after["review_status"]],
+    ];
+    const changed = fields.filter(([, a, b]) => String(a ?? "") !== String(b ?? ""));
+    if (changed.length === 0) return;
+    await supabase.from("receipt_audit").insert(
+      changed.map(([field, old_value, new_value]) => ({
+        business_id: businessId,
+        actor_id: user.id,
+        receipt_id: id,
+        field,
+        old_value: old_value == null ? null : String(old_value),
+        new_value: new_value == null ? null : String(new_value),
+      })),
+    );
+  }
+
+  async function clearDuplicateFlag() {
+    if (!receipt) return;
+    setBusy(true);
+    const { error } = await supabase.from("receipts").update({ duplicate_of: null }).eq("id", id);
+    setBusy(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    await logAudit(receipt, { ...receipt, duplicate_of: null } as unknown as Record<
+      string,
+      unknown
+    >);
+    invalidateAll(qc);
+    toast.success("Marked as not a duplicate.");
+  }
 
   async function save(approve: boolean) {
     setBusy(true);
     try {
-      const { error } = await supabase
-        .from("receipts")
-        .update({
-          vendor: form.vendor || null,
-          receipt_date: form.receipt_date || null,
-          subtotal: form.subtotal === "" ? null : num(form.subtotal),
-          gst_hst: form.gst_hst === "" ? null : num(form.gst_hst),
-          other_tax: form.other_tax === "" ? null : num(form.other_tax),
-          total: num(form.total),
-          receipt_number: form.receipt_number || null,
-          category: form.category,
-          payment_method: form.payment_method === "none" ? null : (form.payment_method as PaymentMethod),
-          project_id: form.project_id === "none" ? null : form.project_id,
-          notes: form.notes || null,
-          warnings,
-          review_status: approve ? "approved" : "needs_review",
-        })
-        .eq("id", id);
+      const patch = {
+        vendor: form.vendor || null,
+        receipt_date: form.receipt_date || null,
+        subtotal: form.subtotal === "" ? null : num(form.subtotal),
+        gst_hst: form.gst_hst === "" ? null : num(form.gst_hst),
+        other_tax: form.other_tax === "" ? null : num(form.other_tax),
+        total: num(form.total),
+        receipt_number: form.receipt_number || null,
+        category: form.category,
+        payment_method:
+          form.payment_method === "none" ? null : (form.payment_method as PaymentMethod),
+        project_id: form.project_id === "none" ? null : form.project_id,
+        notes: form.notes || null,
+        warnings,
+        review_status: approve ? ("approved" as const) : ("needs_review" as const),
+      };
+      const { error } = await supabase.from("receipts").update(patch).eq("id", id);
       if (error) throw error;
+      await logAudit(receipt, patch);
       invalidateAll(qc);
       toast.success(approve ? "Receipt approved." : "Changes saved.");
       if (approve) navigate({ to: "/receipts" });
@@ -125,6 +188,16 @@ function ReceiptDetail() {
 
   async function remove() {
     setBusy(true);
+    if (receipt && businessId && user) {
+      await supabase.from("receipt_audit").insert({
+        business_id: businessId,
+        actor_id: user.id,
+        receipt_id: id,
+        field: "deleted",
+        old_value: receipt.vendor,
+        new_value: null,
+      });
+    }
     const { error } = await supabase.from("receipts").delete().eq("id", id);
     setBusy(false);
     if (error) {
@@ -145,7 +218,9 @@ function ReceiptDetail() {
   if (!receipt) {
     return (
       <AppShell title="Receipt">
-        <p className="py-10 text-center text-sm text-muted-foreground">This receipt no longer exists.</p>
+        <p className="py-10 text-center text-sm text-muted-foreground">
+          This receipt no longer exists.
+        </p>
       </AppShell>
     );
   }
@@ -156,6 +231,24 @@ function ReceiptDetail() {
         {imageUrl ? (
           <div className="panel overflow-hidden">
             <img src={imageUrl} alt="Receipt" className="max-h-80 w-full bg-muted object-contain" />
+          </div>
+        ) : null}
+
+        {receipt.duplicate_of ? (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-destructive/40 bg-destructive/10 p-3">
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 text-sm font-medium text-destructive">
+                <AlertTriangle className="size-4" /> Possible duplicate
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {originalReceipt
+                  ? `Looks like ${originalReceipt.vendor ?? "this vendor"} on ${originalReceipt.receipt_date ?? "the same date"} for ${money(num(originalReceipt.total), originalReceipt.currency)}.`
+                  : "A receipt with the same vendor and total is already in your vault."}
+              </p>
+            </div>
+            <Button size="sm" variant="outline" disabled={busy} onClick={clearDuplicateFlag}>
+              Not a duplicate
+            </Button>
           </div>
         ) : null}
 
@@ -174,7 +267,10 @@ function ReceiptDetail() {
 
         <div className="panel space-y-4 p-4">
           <Row label="Vendor">
-            <Input value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
+            <Input
+              value={form.vendor}
+              onChange={(e) => setForm({ ...form, vendor: e.target.value })}
+            />
           </Row>
           <Row label="Date">
             <Input
@@ -185,20 +281,39 @@ function ReceiptDetail() {
           </Row>
           <div className="grid grid-cols-2 gap-3">
             <Row label="Subtotal">
-              <Input inputMode="decimal" value={form.subtotal} onChange={(e) => setForm({ ...form, subtotal: e.target.value })} />
+              <Input
+                inputMode="decimal"
+                value={form.subtotal}
+                onChange={(e) => setForm({ ...form, subtotal: e.target.value })}
+              />
             </Row>
             <Row label="GST/HST">
-              <Input inputMode="decimal" value={form.gst_hst} onChange={(e) => setForm({ ...form, gst_hst: e.target.value })} />
+              <Input
+                inputMode="decimal"
+                value={form.gst_hst}
+                onChange={(e) => setForm({ ...form, gst_hst: e.target.value })}
+              />
             </Row>
             <Row label="Other tax">
-              <Input inputMode="decimal" value={form.other_tax} onChange={(e) => setForm({ ...form, other_tax: e.target.value })} />
+              <Input
+                inputMode="decimal"
+                value={form.other_tax}
+                onChange={(e) => setForm({ ...form, other_tax: e.target.value })}
+              />
             </Row>
             <Row label="Total">
-              <Input inputMode="decimal" value={form.total} onChange={(e) => setForm({ ...form, total: e.target.value })} />
+              <Input
+                inputMode="decimal"
+                value={form.total}
+                onChange={(e) => setForm({ ...form, total: e.target.value })}
+              />
             </Row>
           </div>
           <Row label="Category">
-            <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v as ExpenseCategory })}>
+            <Select
+              value={form.category}
+              onValueChange={(v) => setForm({ ...form, category: v as ExpenseCategory })}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -212,7 +327,10 @@ function ReceiptDetail() {
             </Select>
           </Row>
           <Row label="Payment method">
-            <Select value={form.payment_method} onValueChange={(v) => setForm({ ...form, payment_method: v })}>
+            <Select
+              value={form.payment_method}
+              onValueChange={(v) => setForm({ ...form, payment_method: v })}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -226,9 +344,12 @@ function ReceiptDetail() {
               </SelectContent>
             </Select>
           </Row>
-          {profile?.mode === "job" ? (
+          {business?.mode === "job" ? (
             <Row label="Project">
-              <Select value={form.project_id} onValueChange={(v) => setForm({ ...form, project_id: v })}>
+              <Select
+                value={form.project_id}
+                onValueChange={(v) => setForm({ ...form, project_id: v })}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -244,10 +365,17 @@ function ReceiptDetail() {
             </Row>
           ) : null}
           <Row label="Receipt #">
-            <Input value={form.receipt_number} onChange={(e) => setForm({ ...form, receipt_number: e.target.value })} />
+            <Input
+              value={form.receipt_number}
+              onChange={(e) => setForm({ ...form, receipt_number: e.target.value })}
+            />
           </Row>
           <Row label="Notes">
-            <Textarea rows={3} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+            <Textarea
+              rows={3}
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            />
           </Row>
         </div>
 
@@ -258,7 +386,13 @@ function ReceiptDetail() {
           <Button variant="outline" className="flex-1" disabled={busy} onClick={() => save(false)}>
             Save draft
           </Button>
-          <Button variant="ghost" size="icon" aria-label="Delete receipt" disabled={busy} onClick={remove}>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Delete receipt"
+            disabled={busy || role === "accountant"}
+            onClick={remove}
+          >
             <Trash2 className="size-4" />
           </Button>
         </div>

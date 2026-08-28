@@ -8,25 +8,31 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useAuth } from "@/lib/auth";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useBusiness } from "@/lib/business";
 import { useProjects, useReceipts } from "@/lib/queries";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  categoryLabel,
-  formatDate,
-  money,
-  projectMetrics,
-  type ProjectStatus,
-} from "@/lib/domain";
+import { categoryLabel, formatDate, money, projectMetrics, type ProjectStatus } from "@/lib/domain";
 
 export const Route = createFileRoute("/projects/$id")({
   head: () => ({
     meta: [
       { title: "Project costs — JobLedger" },
-      { name: "description", content: "Budget, actual cost, gross profit and every receipt tied to this job." },
+      {
+        name: "description",
+        content: "Budget, actual cost, gross profit and every receipt tied to this job.",
+      },
       { property: "og:title", content: "Project costs — JobLedger" },
-      { property: "og:description", content: "See job profitability while the job is still running." },
+      {
+        property: "og:description",
+        content: "See job profitability while the job is still running.",
+      },
     ],
   }),
   component: ProjectDetail,
@@ -36,12 +42,19 @@ function ProjectDetail() {
   const { id } = useParams({ from: "/projects/$id" });
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { user } = useAuth();
-  const { data: projects = [], isLoading } = useProjects(user?.id);
-  const { data: receipts = [] } = useReceipts(user?.id);
+  const { businessId, role } = useBusiness();
+  const canManage = role !== "accountant" && role !== "read_only";
+  const { data: projects = [], isLoading } = useProjects(businessId);
+  const { data: receipts = [] } = useReceipts(businessId);
   const project = projects.find((p) => p.id === id);
 
-  const [form, setForm] = useState({ name: "", customer: "", cost_budget: "", revenue: "", status: "active" });
+  const [form, setForm] = useState({
+    name: "",
+    customer: "",
+    cost_budget: "",
+    revenue: "",
+    status: "active",
+  });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -65,7 +78,9 @@ function ProjectDetail() {
   if (!project) {
     return (
       <AppShell title="Project">
-        <p className="py-10 text-center text-sm text-muted-foreground">This project no longer exists.</p>
+        <p className="py-10 text-center text-sm text-muted-foreground">
+          This project no longer exists.
+        </p>
       </AppShell>
     );
   }
@@ -113,7 +128,11 @@ function ProjectDetail() {
           <div className="grid grid-cols-2 gap-4">
             <Stat label="Actual cost" value={money(m.actualCost)} />
             <Stat label="Cost budget" value={money(m.costBudget)} />
-            <Stat label="Remaining" value={money(m.remaining)} tone={m.remaining < 0 ? "bad" : "good"} />
+            <Stat
+              label="Remaining"
+              value={money(m.remaining)}
+              tone={m.remaining < 0 ? "bad" : "good"}
+            />
             <Stat
               label="Gross profit"
               value={money(m.grossProfit)}
@@ -132,11 +151,19 @@ function ProjectDetail() {
           <p className="text-sm font-medium">Project details</p>
           <div className="space-y-1.5">
             <Label htmlFor="pname">Name</Label>
-            <Input id="pname" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <Input
+              id="pname"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="pcust">Customer</Label>
-            <Input id="pcust" value={form.customer} onChange={(e) => setForm({ ...form, customer: e.target.value })} />
+            <Input
+              id="pcust"
+              value={form.customer}
+              onChange={(e) => setForm({ ...form, customer: e.target.value })}
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -172,10 +199,16 @@ function ProjectDetail() {
             </Select>
           </div>
           <div className="flex gap-2 pt-1">
-            <Button className="flex-1" disabled={busy} onClick={save}>
+            <Button className="flex-1" disabled={busy || !canManage} onClick={save}>
               Save changes
             </Button>
-            <Button variant="ghost" size="icon" aria-label="Delete project" disabled={busy} onClick={remove}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Delete project"
+              disabled={busy || !canManage}
+              onClick={remove}
+            >
               <Trash2 className="size-4" />
             </Button>
           </div>
@@ -184,12 +217,18 @@ function ProjectDetail() {
         <div>
           <p className="mb-2 text-sm font-medium">Receipts on this job</p>
           {projectReceipts.length === 0 ? (
-            <p className="panel p-6 text-center text-sm text-muted-foreground">No receipts assigned yet.</p>
+            <p className="panel p-6 text-center text-sm text-muted-foreground">
+              No receipts assigned yet.
+            </p>
           ) : (
             <ul className="space-y-2">
               {projectReceipts.map((r) => (
                 <li key={r.id}>
-                  <Link to="/receipts/$id" params={{ id: r.id }} className="panel flex items-center gap-3 p-3">
+                  <Link
+                    to="/receipts/$id"
+                    params={{ id: r.id }}
+                    className="panel flex items-center gap-3 p-3"
+                  >
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{r.vendor || "Unknown vendor"}</p>
                       <p className="truncate text-xs text-muted-foreground">

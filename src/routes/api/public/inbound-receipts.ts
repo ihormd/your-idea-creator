@@ -65,7 +65,7 @@ export const Route = createFileRoute("/api/public/inbound-receipts")({
 
         const { data: aliasRow } = await supabaseAdmin
           .from("inbound_aliases")
-          .select("user_id, active")
+          .select("business_id, active")
           .eq("alias", alias)
           .maybeSingle();
 
@@ -81,16 +81,23 @@ export const Route = createFileRoute("/api/public/inbound-receipts")({
           return Response.json({ ok: false, reason: "unknown_alias" }, { status: 202 });
         }
 
-        const userId = aliasRow.user_id;
+        const businessId = aliasRow.business_id;
         const images = payload.attachments
-          .filter((a) => a.content_type.startsWith("image/") || /\.(jpe?g|png|webp|heic)$/i.test(a.filename))
+          .filter(
+            (a) =>
+              a.content_type.startsWith("image/") || /\.(jpe?g|png|webp|heic)$/i.test(a.filename),
+          )
           .slice(0, MAX_ATTACHMENTS);
 
-        const [{ data: profile }, { data: projects }] = await Promise.all([
-          supabaseAdmin.from("profiles").select("mode").eq("id", userId).maybeSingle(),
-          supabaseAdmin.from("projects").select("id, name, customer").eq("user_id", userId).eq("status", "active"),
+        const [{ data: business }, { data: projects }] = await Promise.all([
+          supabaseAdmin.from("businesses").select("mode").eq("id", businessId).maybeSingle(),
+          supabaseAdmin
+            .from("projects")
+            .select("id, name, customer")
+            .eq("business_id", businessId)
+            .eq("status", "active"),
         ]);
-        const mode = profile?.mode === "job" ? "job" : "expense";
+        const mode = business?.mode === "job" ? "job" : "expense";
 
         const { extractReceiptFromImage } = await import("@/lib/receipt-extract.server");
         const { validateReceipt } = await import("@/lib/domain");
@@ -100,11 +107,13 @@ export const Route = createFileRoute("/api/public/inbound-receipts")({
 
         for (const att of images) {
           try {
-            const bytes = Uint8Array.from(atob(att.content_base64.replace(/\s/g, "")), (c) => c.charCodeAt(0));
+            const bytes = Uint8Array.from(atob(att.content_base64.replace(/\s/g, "")), (c) =>
+              c.charCodeAt(0),
+            );
             if (bytes.byteLength > MAX_BYTES) throw new Error("Attachment too large");
             const dataUrl = `data:${att.content_type};base64,${att.content_base64.replace(/\s/g, "")}`;
             const ext = (att.filename.split(".").pop() || "jpg").toLowerCase();
-            const path = `${userId}/${crypto.randomUUID()}.${ext}`;
+            const path = `${businessId}/${crypto.randomUUID()}.${ext}`;
 
             const up = await supabaseAdmin.storage
               .from("receipts")
@@ -115,13 +124,18 @@ export const Route = createFileRoute("/api/public/inbound-receipts")({
               imageDataUrl: dataUrl,
               mode,
               categories: CATEGORY_VALUES,
-              projects: (projects ?? []).map((p) => ({ id: p.id, name: p.name, customer: p.customer })),
+              projects: (projects ?? []).map((p) => ({
+                id: p.id,
+                name: p.name,
+                customer: p.customer,
+              })),
             });
 
             const category = CATEGORY_VALUES.includes(ai.category ?? "") ? ai.category! : "other";
             const payment = PAYMENTS.includes(ai.payment_method ?? "") ? ai.payment_method! : null;
             const projectId =
-              ai.suggested_project_id && (projects ?? []).some((p) => p.id === ai.suggested_project_id)
+              ai.suggested_project_id &&
+              (projects ?? []).some((p) => p.id === ai.suggested_project_id)
                 ? ai.suggested_project_id
                 : null;
 
@@ -138,8 +152,34 @@ export const Route = createFileRoute("/api/public/inbound-receipts")({
               mode,
             );
 
+            let duplicateOf: string | null = null;
+            if (ai.vendor && ai.total) {
+              const { data: candidates } = await supabaseAdmin
+                .from("receipts")
+                .select("id, receipt_date, total")
+                .eq("business_id", businessId)
+                .ilike("vendor", ai.vendor)
+                .eq("total", ai.total)
+                .is("duplicate_of", null)
+                .limit(5);
+              const match = (candidates ?? []).find((c) => {
+                if (!ai.receipt_date || !c.receipt_date) return true;
+                const days =
+                  Math.abs(
+                    new Date(ai.receipt_date).getTime() - new Date(c.receipt_date).getTime(),
+                  ) / 86400000;
+                return days <= 3;
+              });
+              if (match) {
+                duplicateOf = match.id;
+                warnings.push(
+                  "Possible duplicate — a receipt with the same vendor and total is already in your vault.",
+                );
+              }
+            }
+
             const { error } = await supabaseAdmin.from("receipts").insert({
-              user_id: userId,
+              business_id: businessId,
               image_path: path,
               vendor: ai.vendor,
               receipt_date: ai.receipt_date,
@@ -154,6 +194,7 @@ export const Route = createFileRoute("/api/public/inbound-receipts")({
               project_id: projectId,
               review_status: "needs_review",
               warnings,
+              duplicate_of: duplicateOf,
               ai_confidence: ai.confidence,
               notes: ai.notes_for_reviewer,
               source: "email",
@@ -167,7 +208,7 @@ export const Route = createFileRoute("/api/public/inbound-receipts")({
         }
 
         await supabaseAdmin.from("inbound_emails").insert({
-          user_id: userId,
+          business_id: businessId,
           alias,
           from_email: payload.from,
           subject: payload.subject,

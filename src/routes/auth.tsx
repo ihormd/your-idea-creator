@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Receipt } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,15 +73,13 @@ function AuthPage() {
   }
 
   async function google() {
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/` },
     });
-    if (result.error) {
+    if (error) {
       toast.error("Google sign-in failed. Try email instead.");
-      return;
     }
-    if (result.redirected) return;
-    navigate({ to: "/" });
   }
 
   return (
@@ -108,7 +105,13 @@ function AuthPage() {
             <TabsContent value="signin">
               <form className="space-y-4 pt-4" onSubmit={signIn}>
                 <Field id="email" label="Email" type="email" value={email} onChange={setEmail} />
-                <Field id="password" label="Password" type="password" value={password} onChange={setPassword} />
+                <Field
+                  id="password"
+                  label="Password"
+                  type="password"
+                  value={password}
+                  onChange={setPassword}
+                />
                 <Button className="w-full" disabled={busy} type="submit">
                   Sign in
                 </Button>
@@ -117,9 +120,20 @@ function AuthPage() {
 
             <TabsContent value="signup">
               <form className="space-y-4 pt-4" onSubmit={signUp}>
-                <Field id="business" label="Business name" value={businessName} onChange={setBusinessName} />
+                <Field
+                  id="business"
+                  label="Business name"
+                  value={businessName}
+                  onChange={setBusinessName}
+                />
                 <Field id="email2" label="Email" type="email" value={email} onChange={setEmail} />
-                <Field id="password2" label="Password" type="password" value={password} onChange={setPassword} />
+                <Field
+                  id="password2"
+                  label="Password"
+                  type="password"
+                  value={password}
+                  onChange={setPassword}
+                />
                 <Button className="w-full" disabled={busy} type="submit">
                   Create account
                 </Button>
@@ -162,7 +176,13 @@ function Field({
   return (
     <div className="space-y-1.5">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} type={type} value={value} required onChange={(e) => onChange(e.target.value)} />
+      <Input
+        id={id}
+        type={type}
+        value={value}
+        required
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   );
 }

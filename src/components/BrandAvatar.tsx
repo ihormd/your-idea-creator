@@ -17,8 +17,8 @@ export function BrandAvatar({
   name,
   className,
 }: {
-  logoPath?: string | null;
-  name?: string | null;
+  logoPath: string | null | undefined;
+  name: string | null | undefined;
   className?: string;
 }) {
   const { data: url } = useSignedFile("branding", logoPath);
@@ -33,7 +33,11 @@ export function BrandAvatar({
       aria-hidden={!name}
     >
       {url ? (
-        <img src={url} alt={name ? `${name} logo` : "Business logo"} className="size-full object-cover" />
+        <img
+          src={url}
+          alt={name ? `${name} logo` : "Business logo"}
+          className="size-full object-cover"
+        />
       ) : initials ? (
         <span>{initials}</span>
       ) : (

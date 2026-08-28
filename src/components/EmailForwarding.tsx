@@ -16,18 +16,18 @@ function randomAlias() {
   return `rcpt-${out}`;
 }
 
-export function EmailForwarding({ userId }: { userId: string | undefined }) {
+export function EmailForwarding({ businessId }: { businessId: string | null | undefined }) {
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
 
   const alias = useQuery({
-    queryKey: ["inbound-alias", userId],
-    enabled: !!userId,
+    queryKey: ["inbound-alias", businessId],
+    enabled: !!businessId,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("inbound_aliases")
         .select("alias, active")
-        .eq("user_id", userId!)
+        .eq("business_id", businessId!)
         .maybeSingle();
       if (error) throw error;
       return data;
@@ -35,8 +35,8 @@ export function EmailForwarding({ userId }: { userId: string | undefined }) {
   });
 
   const emails = useQuery({
-    queryKey: ["inbound-emails", userId],
-    enabled: !!userId && !!alias.data,
+    queryKey: ["inbound-emails", businessId],
+    enabled: !!businessId && !!alias.data,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("inbound_emails")
@@ -52,7 +52,7 @@ export function EmailForwarding({ userId }: { userId: string | undefined }) {
     mutationFn: async () => {
       const { error } = await supabase
         .from("inbound_aliases")
-        .insert({ user_id: userId!, alias: randomAlias() });
+        .insert({ business_id: businessId!, alias: randomAlias() });
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["inbound-alias"] }),
@@ -60,7 +60,10 @@ export function EmailForwarding({ userId }: { userId: string | undefined }) {
 
   const toggle = useMutation({
     mutationFn: async (active: boolean) => {
-      const { error } = await supabase.from("inbound_aliases").update({ active }).eq("user_id", userId!);
+      const { error } = await supabase
+        .from("inbound_aliases")
+        .update({ active })
+        .eq("business_id", businessId!);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["inbound-alias"] }),
@@ -75,14 +78,14 @@ export function EmailForwarding({ userId }: { userId: string | undefined }) {
         <h2 className="font-medium">Email forwarding</h2>
       </div>
       <p className="text-sm text-muted-foreground">
-        Forward supplier receipts and invoices to your private address. Image attachments are read by AI and land in your
-        vault as receipts to review.
+        Forward supplier receipts and invoices to your private address. Image attachments are read
+        by AI and land in your vault as receipts to review.
       </p>
 
       {!alias.data ? (
         <Button
           className="w-full"
-          disabled={busy || !userId}
+          disabled={busy || !businessId}
           onClick={async () => {
             setBusy(true);
             try {
@@ -131,7 +134,13 @@ export function EmailForwarding({ userId }: { userId: string | undefined }) {
                       {e.from_email || "unknown sender"} · {formatDate(e.created_at)}
                     </p>
                   </div>
-                  <span className={e.status === "processed" ? "shrink-0 text-primary" : "shrink-0 text-muted-foreground"}>
+                  <span
+                    className={
+                      e.status === "processed"
+                        ? "shrink-0 text-primary"
+                        : "shrink-0 text-muted-foreground"
+                    }
+                  >
                     {e.receipts_created} receipt{e.receipts_created === 1 ? "" : "s"}
                   </span>
                 </li>

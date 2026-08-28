@@ -1,6 +1,9 @@
 import type { Database } from "@/integrations/supabase/types";
 
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
+export type Business = Database["public"]["Tables"]["businesses"]["Row"];
+export type Membership = Database["public"]["Tables"]["memberships"]["Row"];
+export type MembershipRole = Database["public"]["Enums"]["membership_role"];
 export type Project = Database["public"]["Tables"]["projects"]["Row"];
 export type Receipt = Database["public"]["Tables"]["receipts"]["Row"];
 export type ExpenseCategory = Database["public"]["Enums"]["expense_category"];
@@ -8,6 +11,19 @@ export type PaymentMethod = Database["public"]["Enums"]["payment_method"];
 export type ReviewStatus = Database["public"]["Enums"]["review_status"];
 export type ProjectStatus = Database["public"]["Enums"]["project_status"];
 export type AppMode = Database["public"]["Enums"]["app_mode"];
+
+export const ROLE_LABELS: Record<MembershipRole, string> = {
+  owner: "Owner",
+  admin: "Admin",
+  member: "Member",
+  accountant: "Accountant",
+  read_only: "Read only",
+};
+// Accountant can view everything and correct categorization on receipts,
+// but doesn't manage projects/budgets or invite other people — matches the
+// "sees reports & receipts, can't touch what isn't theirs to touch" ask.
+export const canManageBusiness = (role: MembershipRole | null | undefined) =>
+  role === "owner" || role === "admin";
 
 export const CATEGORIES: { value: ExpenseCategory; label: string }[] = [
   { value: "materials", label: "Materials" },
@@ -68,7 +84,9 @@ export function formatDate(value: string | null | undefined) {
 /** Job-costing math (approved costs only, per specification). */
 export function projectMetrics(project: Project, receipts: Receipt[]) {
   const approved = receipts.filter(
-    (r) => r.project_id === project.id && (r.review_status === "approved" || r.review_status === "exported"),
+    (r) =>
+      r.project_id === project.id &&
+      (r.review_status === "approved" || r.review_status === "exported"),
   );
   const actualCost = approved.reduce((sum, r) => sum + num(r.total), 0);
   const costBudget = num(project.cost_budget);
@@ -77,18 +95,30 @@ export function projectMetrics(project: Project, receipts: Receipt[]) {
   const grossProfit = revenue - actualCost;
   const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
   const budgetUsedPct = costBudget > 0 ? (actualCost / costBudget) * 100 : 0;
-  return { actualCost, costBudget, revenue, remaining, grossProfit, grossMargin, budgetUsedPct, count: approved.length };
+  return {
+    actualCost,
+    costBudget,
+    revenue,
+    remaining,
+    grossProfit,
+    grossMargin,
+    budgetUsedPct,
+    count: approved.length,
+  };
 }
 
-export function validateReceipt(r: {
-  subtotal?: number | null;
-  gst_hst?: number | null;
-  other_tax?: number | null;
-  total?: number | null;
-  receipt_date?: string | null;
-  vendor?: string | null;
-  project_id?: string | null;
-}, mode: AppMode = "expense") {
+export function validateReceipt(
+  r: {
+    subtotal?: number | null;
+    gst_hst?: number | null;
+    other_tax?: number | null;
+    total?: number | null;
+    receipt_date?: string | null;
+    vendor?: string | null;
+    project_id?: string | null;
+  },
+  mode: AppMode = "expense",
+) {
   const warnings: string[] = [];
   const subtotal = num(r.subtotal);
   const tax = num(r.gst_hst) + num(r.other_tax);
