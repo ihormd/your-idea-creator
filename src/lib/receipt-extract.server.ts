@@ -55,7 +55,9 @@ export async function extractReceiptFromImage(data: ExtractInput): Promise<Extra
   ].join("\n");
 
   const body = {
-    model: "gemini-2.5-flash",
+    // gemini-2.5-flash is retired for new API users (Google returns 404);
+    // gemini-3.8-flash is Google's recommended replacement.
+    model: "gemini-3.8-flash",
     messages: [
       { role: "system", content: system },
       {
