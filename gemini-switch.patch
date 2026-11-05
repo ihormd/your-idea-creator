@@ -1,0 +1,167 @@
+From cd7904bd57482c9fcf0a4197aa100fa0b3913d25 Mon Sep 17 00:00:00 2001
+From: ihormd <103286172+ihormd@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 22:54:26 -0500
+Subject: [PATCH] Use Gemini free tier for receipt OCR (was OpenAI)
+
+Receipt extraction now calls Google Gemini gemini-2.5-flash via its
+OpenAI-compatible endpoint, with GEMINI_API_KEY from Google AI Studio
+(free tier, no paid account needed). The strict JSON-schema response
+format is OpenAI-only, so the request now uses plain JSON-object mode;
+the system prompt already says 'Return JSON only' and the response is
+parsed with a fallback error. No other code touched.
+---
+ .env.example                      |  2 +-
+ src/lib/receipt-extract.server.ts | 91 +++++++++----------------------
+ 2 files changed, 26 insertions(+), 67 deletions(-)
+
+diff --git a/.env.example b/.env.example
+index abb6509..a84c85b 100644
+--- a/.env.example
++++ b/.env.example
+@@ -8,7 +8,7 @@ SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+ 
+ # Receipt OCR/extraction
+-OPENAI_API_KEY=sk-...
++GEMINI_API_KEY=your-gemini-api-key-from-ai-studio
+ 
+ # Inbound-email webhook auth (server-side only, never the publishable key)
+ INBOUND_WEBHOOK_SECRET=
+diff --git a/src/lib/receipt-extract.server.ts b/src/lib/receipt-extract.server.ts
+index 66e04e0..a1b96be 100644
+--- a/src/lib/receipt-extract.server.ts
++++ b/src/lib/receipt-extract.server.ts
+@@ -1,13 +1,12 @@
+ // Server-only receipt extraction core, shared by the scan server function
+ // and the inbound-email webhook.
+ //
+-// Calls OpenAI directly (your own API key, your own billing) — this used
+-// to go through a third-party AI gateway with a proxied key, which meant
+-// the app's core feature depended on a third party's proxy and credit
+-// balance. If you'd rather use a different provider, only this function
+-// needs to change: swap the endpoint/model/auth below, the request body is
+-// already OpenAI-compatible (most providers — Groq, OpenRouter, Azure
+-// OpenAI — accept this exact shape with just a different base URL).
++// Calls Google Gemini (free tier) through its OpenAI-compatible endpoint,
++// with your own API key from Google AI Studio — no paid account needed.
++// If you'd rather use a different provider, only this function needs to
++// change: swap the endpoint/model/auth below, the request body is already
++// OpenAI-compatible (most providers — Groq, OpenRouter, Azure OpenAI —
++// accept this exact shape with just a different base URL).
+ 
+ export type ExtractedReceipt = {
+   vendor: string | null;
+@@ -33,11 +32,13 @@ export type ExtractInput = {
+ };
+ 
+ export async function extractReceiptFromImage(data: ExtractInput): Promise<ExtractedReceipt> {
+-  const key = process.env["OPENAI_API_KEY"];
++  const key = process.env["GEMINI_API_KEY"];
+   if (!key) throw new Error("AI is not configured for this app.");
+ 
+   const projectList = data.projects.length
+-    ? data.projects.map((p) => `${p.id} = ${p.name}${p.customer ? ` (${p.customer})` : ""}`).join("\n")
++    ? data.projects
++        .map((p) => `${p.id} = ${p.name}${p.customer ? ` (${p.customer})` : ""}`)
++        .join("\n")
+     : "none";
+ 
+   const system = [
+@@ -54,7 +55,7 @@ export async function extractReceiptFromImage(data: ExtractInput): Promise<Extra
+   ].join("\n");
+ 
+   const body = {
+-    model: "gpt-4o-mini",
++    model: "gemini-2.5-flash",
+     messages: [
+       { role: "system", content: system },
+       {
+@@ -65,71 +66,29 @@ export async function extractReceiptFromImage(data: ExtractInput): Promise<Extra
+         ],
+       },
+     ],
++    // Gemini's OpenAI-compatible endpoint supports plain JSON-object mode;
++    // the strict JSON-schema mode is an OpenAI-only feature, so it is not
++    // sent here. The system prompt already says "Return JSON only" and the
++    // response is parsed with a fallback error below.
+     response_format: {
+-      type: "json_schema",
+-      json_schema: {
+-        name: "receipt",
+-        strict: true,
+-        schema: {
+-          type: "object",
+-          additionalProperties: false,
+-          required: [
+-            "vendor",
+-            "receipt_date",
+-            "currency",
+-            "subtotal",
+-            "gst_hst",
+-            "other_tax",
+-            "total",
+-            "receipt_number",
+-            "payment_method",
+-            "category",
+-            "suggested_project_id",
+-            "confidence",
+-            "notes_for_reviewer",
+-          ],
+-          properties: {
+-            vendor: { type: ["string", "null"] },
+-            receipt_date: { type: ["string", "null"] },
+-            currency: { type: "string" },
+-            subtotal: { type: ["number", "null"] },
+-            gst_hst: { type: ["number", "null"] },
+-            other_tax: { type: ["number", "null"] },
+-            total: { type: ["number", "null"] },
+-            receipt_number: { type: ["string", "null"] },
+-            payment_method: { type: ["string", "null"] },
+-            category: { type: ["string", "null"] },
+-            suggested_project_id: { type: ["string", "null"] },
+-            notes_for_reviewer: { type: ["string", "null"] },
+-            confidence: {
+-              type: "object",
+-              additionalProperties: false,
+-              required: ["vendor", "receipt_date", "subtotal", "gst_hst", "total"],
+-              properties: {
+-                vendor: { type: "number" },
+-                receipt_date: { type: "number" },
+-                subtotal: { type: "number" },
+-                gst_hst: { type: "number" },
+-                total: { type: "number" },
+-              },
+-            },
+-          },
+-        },
+-      },
++      type: "json_object",
+     },
+   };
+ 
+-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+-    method: "POST",
+-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+-    body: JSON.stringify(body),
+-  });
++  const res = await fetch(
++    "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
++    {
++      method: "POST",
++      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
++      body: JSON.stringify(body),
++    },
++  );
+ 
+   if (!res.ok) {
+     const text = await res.text();
+     if (res.status === 429) throw new Error("AI is busy right now. Please try again in a moment.");
+     if (res.status === 402 || res.status === 401)
+-      throw new Error("AI is not available right now — check the OpenAI API key and billing.");
++      throw new Error("AI is not available right now — check the AI API key.");
+     throw new Error(`Receipt reading failed (${res.status}): ${text.slice(0, 300)}`);
+   }
+ 
+-- 
+2.43.0
+
