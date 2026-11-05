@@ -3,8 +3,11 @@ import { z } from "zod";
 
 // Inbound email receiver. Point your inbound-email provider (Mailgun routes,
 // SendGrid Inbound Parse, Postmark, CloudMailin, Zapier…) at this URL and have
-// it POST JSON in the shape below, authenticated with the project's
-// publishable key in the `apikey` header or an `?apikey=` query param.
+// it POST JSON in the shape below, authenticated with the dedicated
+// INBOUND_WEBHOOK_SECRET in the `apikey` header. The project's publishable
+// key must NOT be used here: it ships in every client bundle, so anyone
+// who knows this URL could post fake receipts and burn the AI quota.
+// Query-string keys are not accepted: URLs get logged.
 const Payload = z.object({
   to: z.string().min(3),
   from: z.string().optional().default(""),
@@ -46,9 +49,8 @@ export const Route = createFileRoute("/api/public/inbound-receipts")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const expected = process.env["SUPABASE_PUBLISHABLE_KEY"];
-        const url = new URL(request.url);
-        const provided = request.headers.get("apikey") ?? url.searchParams.get("apikey");
+        const expected = process.env["INBOUND_WEBHOOK_SECRET"];
+        const provided = request.headers.get("apikey");
         if (!expected || provided !== expected) {
           return new Response("Unauthorized", { status: 401 });
         }
@@ -101,6 +103,7 @@ export const Route = createFileRoute("/api/public/inbound-receipts")({
 
         const { extractReceiptFromImage } = await import("@/lib/receipt-extract.server");
         const { validateReceipt } = await import("@/lib/domain");
+        const { consumeOcrQuota } = await import("@/lib/ocr-quota.server");
 
         let created = 0;
         let failure: string | null = null;
@@ -119,6 +122,11 @@ export const Route = createFileRoute("/api/public/inbound-receipts")({
               .from("receipts")
               .upload(path, bytes, { contentType: att.content_type, upsert: false });
             if (up.error) throw up.error;
+
+            const quota = await consumeOcrQuota("business", businessId);
+            if (!quota.allowed) {
+              throw new Error("Daily scan limit reached for this business. Try again tomorrow.");
+            }
 
             const ai = await extractReceiptFromImage({
               imageDataUrl: dataUrl,

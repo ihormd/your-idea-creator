@@ -104,6 +104,29 @@ export type Database = {
           },
         ]
       }
+      // Added by hand for the ocr_usage table (quota counters); regenerate
+      // with `supabase gen types` after applying the migration.
+      ocr_usage: {
+        Row: {
+          count: number
+          day: string
+          scope: string
+          scope_id: string
+        }
+        Insert: {
+          count?: number
+          day?: string
+          scope: string
+          scope_id: string
+        }
+        Update: {
+          count?: number
+          day?: string
+          scope?: string
+          scope_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
