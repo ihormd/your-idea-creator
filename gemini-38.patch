@@ -1,0 +1,30 @@
+From c55d0a2b6279a77680f9f2c73ad70ea145d6e8c8 Mon Sep 17 00:00:00 2001
+From: ihormd <103286172+ihormd@users.noreply.github.com>
+Date: Wed, 4 Nov 2026 23:14:20 -0500
+Subject: [PATCH] Use gemini-3.8-flash for receipt OCR (2.5-flash retired for
+ new users)
+
+Google returns 404 for gemini-2.5-flash to new API users and recommends
+gemini-3.8-flash. One-line model swap, nothing else changed.
+---
+ src/lib/receipt-extract.server.ts | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/lib/receipt-extract.server.ts b/src/lib/receipt-extract.server.ts
+index a1b96be..a7af011 100644
+--- a/src/lib/receipt-extract.server.ts
++++ b/src/lib/receipt-extract.server.ts
+@@ -55,7 +55,9 @@ export async function extractReceiptFromImage(data: ExtractInput): Promise<Extra
+   ].join("\n");
+ 
+   const body = {
+-    model: "gemini-2.5-flash",
++    // gemini-2.5-flash is retired for new API users (Google returns 404);
++    // gemini-3.8-flash is Google's recommended replacement.
++    model: "gemini-3.8-flash",
+     messages: [
+       { role: "system", content: system },
+       {
+-- 
+2.43.0
+
